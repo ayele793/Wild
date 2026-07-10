@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wild Coffee | Operations Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F9F5F0; }
+        .espresso-bg { background-color: #1E1612; }
+        .saffron-accent { color: #D97706; }
+        .bg-saffron { background-color: #D97706; }
+        .bg-saffron:hover { background-color: #b46204; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .view-section { display: none; opacity: 0; transition: opacity 0.3s ease; }
+        .view-section.active { display: block; opacity: 1; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(30, 22, 18, 0.8); z-index: 50; backdrop-filter: blur(4px); }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        .nav-btn.active-nav { background-color: #D97706; color: white; }
+    </style>
+</head>
+<body class="text-slate-900">
+
+    <div id="login-screen" class="fixed inset-0 espresso-bg flex items-center justify-center z-[200]">
+        <div class="bg-white p-10 rounded-2xl w-full max-w-md card-shadow text-center">
+            <h1 class="text-3xl font-bold saffron-accent mb-2">WILD COFFEE</h1>
+            <p class="text-slate-500 mb-8">Operations & Inventory Portal</p>
+            <div class="text-left">
+                <label class="block text-sm font-bold text-slate-700 mb-2">Select Role</label>
+                <select id="login-role" class="w-full p-4 border border-slate-300 rounded-xl mb-4 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#D97706]">
+                    <option value="admin">System Administrator</option>
+                    <option value="Main Warehouse">Store Keeper: Main Warehouse</option>
+                    <!-- Default Branches, dynamic ones load via JS -->
+                    <option value="Bole">Store Keeper: Bole Branch</option>
+                    <option value="Gazebo">Store Keeper: Gazebo Branch</option>
+                    <option value="Embassy">Store Keeper: Embassy Branch</option>
+                    <option value="Sarbet">Store Keeper: Sarbet Branch</option>
+                    <option value="Airlines">Store Keeper: Airlines Branch</option>
+                </select>
+                
+                <label class="block text-sm font-bold text-slate-700 mb-2">Passcode</label>
+                <input type="password" id="login-password"="Admin: abcd | Keeper: efg" class="w-full p-4 border border-slate-300 rounded-xl mb-6 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#D97706]">
+                
+                <div id="login-error" class="text-red-600 text-sm font-bold mb-4 hidden text-center bg-red-50 p-3 rounded-xl border border-red-200">
+                    Incorrect passcode.
+                </div>
+
+                <button onclick="window.login()" class="w-full bg-saffron text-white py-4 rounded-xl font-bold text-lg hover:shadow-lg transition-all">Secure Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- General Action Modal (Add Item, Purchase, Transfer) -->
+    <div id="action-modal" class="modal">
+        <div class="bg-white p-8 rounded-2xl w-full max-w-lg card-shadow transform transition-all">
+            <h3 id="modal-title" class="text-2xl font-bold mb-6 text-slate-800">Action</h3>
+            <div id="modal-error" class="hidden mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-bold"></div>
+            <div id="modal-content" class="space-y-5">
+                <!-- Inputs injected dynamically via JS -->
+            </div>
+            <div class="mt-8 flex justify-end gap-4">
+                <button onclick="window.closeModal()" class="px-6 py-3 text-slate-500 font-semibold hover:bg-slate-100 rounded-xl transition-all">Cancel</button>
+                <button onclick="window.handleSave()" class="px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-md">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receive Transfer Modal -->
+    <div id="receive-modal" class="modal">
+        <div class="bg-white p-8 rounded-2xl w-full max-w-md card-shadow transform transition-all border-t-8 border-green-500">
+            <h3 class="text-2xl font-bold mb-2 text-slate-800">Receive Stock</h3>
+            <p id="receive-desc" class="text-slate-500 mb-6 text-sm"></p>
+            
+            <input type="hidden" id="receive-transfer-id">
+            
+            <label class="block text-sm font-bold text-slate-700 mb-1 mt-4">Actual Quantity Received</label>
+            <input id="receive-qty" type="number" class="w-full p-4 border border-green-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:outline-none bg-green-50 text-lg font-bold">
+            <p class="text-xs text-slate-400 mt-2">Any missing units will be returned to the sender automatically.</p>
+
+            <div class="mt-8 flex justify-end gap-4">
+                <button onclick="window.closeReceiveModal()" class="px-6 py-3 text-slate-500 font-semibold hover:bg-slate-100 rounded-xl transition-all">Cancel</button>
+                <button onclick="window.confirmReceive()" class="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-all shadow-md">Confirm Delivery</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="min-h-screen flex flex-col md:flex-row">
+        <!-- Sidebar -->
+        <aside class="w-full md:w-64 espresso-bg text-white p-6 flex flex-col shrink-0">
+            <div class="text-center mb-6">
+                <img src="https://ethiopianwildcoffee.net/wp-content/uploads/2023/07/wild-roasted-1Kg-400-x-557.png" alt="Wild Coffee Product" class="w-24 mx-auto mb-4 rounded-lg shadow-lg border border-slate-700 object-cover bg-[#2C1E16]">
+                <h1 class="text-2xl font-bold saffron-accent tracking-wide">WILD COFFEE</h1>
+            </div>
+            <div class="mb-6 px-4 py-3 bg-[#2C1E16] rounded-xl border border-slate-700">
+                <p class="text-xs text-slate-400 uppercase tracking-wider">Active User</p>
+                <p id="display-role" class="font-bold text-sm truncate">Loading...</p>
+            </div>
+            <nav class="space-y-3 flex-grow" id="sidebar-nav">
+                <button onclick="window.showView('dashboard', this)" class="nav-btn active-nav block w-full text-left py-3 px-4 rounded-xl font-semibold transition-all">Dashboard</button>
+                <button onclick="window.showView('inventory', this)" class="nav-btn block w-full text-left py-3 px-4 rounded-xl hover:bg-[#2C1E16] font-semibold transition-all">Inventory Ledger</button>
+                <button onclick="window.showView('reports', this)" class="nav-btn block w-full text-left py-3 px-4 rounded-xl hover:bg-[#2C1E16] font-semibold transition-all">System Reports</button>
+                <button id="admin-nav" onclick="window.showView('admin', this)" class="hidden nav-btn block w-full text-left py-3 px-4 rounded-xl hover:bg-[#2C1E16] font-semibold transition-all text-[#D97706]">Admin Config</button>
+            </nav>
+            <button onclick="location.reload()" class="mt-10 py-3 text-slate-400 text-sm font-semibold hover:text-white transition-colors text-left pl-4">← Logout / Switch</button>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full">
+            
+            <div id="view-dashboard" class="view-section active">
+                <header class="mb-8">
+                    <h2 class="text-3xl font-bold text-slate-800">Operations Overview</h2>
+                    <p class="text-slate-500 mt-1">Real-time pulse of your inventory.</p>
+                </header>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 bg-white p-6 md:p-8 rounded-2xl card-shadow border border-slate-100">
+                        <h3 class="font-bold text-lg mb-6 text-slate-700">Stock Distribution by Branch</h3>
+                        <div class="h-72 relative w-full">
+                            <canvas id="inventoryChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 md:p-8 rounded-2xl card-shadow border border-slate-100 flex flex-col justify-between">
+                        <div>
+                            <h3 class="font-bold text-lg mb-6 text-slate-700">System Status</h3>
+                            <div class="space-y-4">
+                                <div class="p-4 bg-green-50 text-green-700 rounded-xl border border-green-100 flex items-center justify-between">
+                                    <span class="font-semibold">Local Sync</span>
+                                    <span class="text-sm bg-green-200 px-2 py-1 rounded-full text-green-800 font-bold">Active</span>
+                                </div>
+                                <div class="p-4 bg-orange-50 text-orange-800 rounded-xl border border-orange-100">
+                                    <p class="text-sm font-semibold mb-1">Total System Items</p>
+                                    <p id="stat-total-items" class="text-3xl font-bold">0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-reports" class="view-section">
+                <header class="mb-8 flex justify-between items-end">
+                    <div>
+                        <h2 class="text-3xl font-bold text-slate-800">System Reports</h2>
+                        <p class="text-slate-500 mt-1">Filter and audit complete transaction history.</p>
+                    </div>
+                </header>
+                
+                <div class="bg-white p-5 rounded-2xl card-shadow border border-slate-100 mb-6 flex flex-wrap gap-4 items-end">
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Start Date</label>
+                        <input type="date" id="filter-start" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none bg-slate-50">
+                    </div>
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">End Date</label>
+                        <input type="date" id="filter-end" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none bg-slate-50">
+                    </div>
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Transaction Type</label>
+                        <select id="filter-type" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none bg-white font-semibold">
+                            <option value="all">All Movements</option>
+                            <option value="Purchase">Purchase (Local Add)</option>
+                            <option value="Transfer In">Transfer In</option>
+                            <option value="Transfer Out">Transfer Out</option>
+                            <option value="Returned Stock">Returned Stock</option>
+                        </select>
+                    </div>
+                    <button onclick="window.renderReports()" class="px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-md">Apply Filters</button>
+                </div>
+
+                <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                    <th class="p-5 font-semibold">Date</th>
+                                    <th class="p-5 font-semibold">Movement Type</th>
+                                    <th class="p-5 font-semibold">Item Name</th>
+                                    <th class="p-5 font-semibold">Quantity</th>
+                                    <th class="p-5 font-semibold">Location</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-table" class="divide-y divide-slate-100 text-slate-700">
+                                <tr><td colspan="5" class="p-8 text-center text-slate-400">Loading reports...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-inventory" class="view-section">
+                <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-slate-800">Inventory Ledger</h2>
+                        <p class="text-slate-500 mt-1">Consolidated remaining stock balances.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-3 w-full md:w-auto">
+                        <button onclick="window.exportCSV()" class="px-5 py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all card-shadow text-sm flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> CSV Dump</button>
+                        <button onclick="window.openModal('txn-purchase')" class="px-5 py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-900 transition-all text-sm shadow-md flex items-center gap-2">+ Local Purchase</button>
+                        <button onclick="window.openModal('txn-transfer-out')" class="px-5 py-3 bg-[#D97706] text-white font-bold rounded-xl hover:bg-[#b46204] transition-all text-sm shadow-md flex items-center gap-2">↑ Transfer Out</button>
+                    </div>
+                </header>
+
+                <!-- Pending Inbound Transfers Alerts -->
+                <div id="pending-transfers-panel" class="hidden mb-6 bg-orange-50 border-2 border-orange-200 rounded-2xl overflow-hidden shadow-sm">
+                    <div class="bg-orange-100 p-4 border-b border-orange-200 flex items-center gap-3">
+                        <span class="bg-orange-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-sm">!</span>
+                        <h3 class="font-bold text-orange-900">Action Required: Pending Inbound Transfers</h3>
+                    </div>
+                    <div class="p-0 overflow-x-auto">
+                        <table class="w-full text-left">
+                            <tbody id="pending-transfers-table" class="divide-y divide-orange-200/50">
+                                <!-- Pending rows injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 text-sm uppercase tracking-wider">
+                                    <th class="p-5 font-bold">Item Name</th>
+                                    <th class="p-5 font-bold">Remaining Balance</th>
+                                    <th class="p-5 font-bold">Location</th>
+                                    <th class="p-5 font-bold">Last Activity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-table" class="divide-y divide-slate-100 text-slate-700">
+                                <tr><td colspan="4" class="p-8 text-center text-slate-400 font-medium">Calculating stock balances...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+			<div id="view-security" class="view-section">
+                <h2 class="text-2xl font-bold mb-6">Security Settings</h2>
+                <div class="bg-white p-8 rounded-2xl shadow max-w-sm">
+                    <input type="password" id="sec-old" placeholder="Old Passcode" class="w-full p-3 border rounded-xl mb-3">
+                    <input type="password" id="sec-new" placeholder="New Passcode" class="w-full p-3 border rounded-xl mb-3">
+                    <button onclick="window.updatePassword()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Update</button>
+                </div>
+            </div>
+
+            <div id="view-admin" class="view-section">
+                <header class="mb-8">
+                    <h2 class="text-3xl font-bold text-slate-800">System Administration</h2>
+                    <p class="text-slate-500 mt-1">Configure global parameters and networks.</p>
+                </header>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <button onclick="window.openModal('add-item')" class="group p-10 bg-white rounded-3xl border-2 border-dashed border-slate-300 text-center hover:border-[#D97706] hover:bg-orange-50 transition-all flex flex-col items-center justify-center gap-4">
+                        <div class="w-16 h-16 bg-slate-100 text-slate-400 group-hover:bg-[#D97706] group-hover:text-white rounded-full flex items-center justify-center text-3xl transition-all font-bold">+</div>
+                        <div>
+                            <h4 class="font-bold text-xl text-slate-800">Add Global Master Item</h4>
+                            <p class="text-slate-500 mt-2 text-sm">Register new coffee types, sugar, etc. for all stores.</p>
+                        </div>
+                    </button>
+                    <button onclick="window.openModal('add-branch')" class="group p-10 bg-white rounded-3xl border-2 border-dashed border-slate-300 text-center hover:border-slate-800 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-4">
+                        <div class="w-16 h-16 bg-slate-100 text-slate-400 group-hover:bg-slate-800 group-hover:text-white rounded-full flex items-center justify-center text-3xl transition-all font-bold">+</div>
+                        <div>
+                            <h4 class="font-bold text-xl text-slate-800">Register New Branch</h4>
+                            <p class="text-slate-500 mt-2 text-sm">Expand your network locations dynamically.</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        // Core DB structure saved entirely in the Browser's Local Storage for persistence.
+        const mockDB = { items: [], branches: [], inventory: [], transfers: [] };
+        const mockListeners = [];
+
+        function initMockDatabase() {
+            // Load saved data from browser storage so it survives page refreshes!
+            ['items', 'branches', 'inventory', 'transfers'].forEach(col => {
+                const savedData = JSON.parse(localStorage.getItem('wildCoffee_' + col)) || [];
+                mockDB[col] = savedData.map(item => ({ data: () => item, raw: item, id: item.id || generateId() }));
+            });
+
+            // Pre-fill default branches ONLY if database is completely empty
+            if (mockDB.branches.length === 0) {
+                const defaultBranchNames = ['Main Warehouse', 'Bole', 'Gazebo', 'Embassy', 'Sarbet', 'Airlines'];
+                defaultBranchNames.forEach(name => {
+                    const bData = { name: name, timestamp: new Date().toLocaleString() };
+                    const doc = { data: () => bData, raw: bData, id: generateId() };
+                    mockDB.branches.push(doc);
+                });
+                persistCollection('branches');
+            }
+        }
+        
+        function generateId() {
+            return Math.random().toString(36).substr(2, 9);
+        }
+
+        function persistCollection(colName) {
+            localStorage.setItem('wildCoffee_' + colName, JSON.stringify(mockDB[colName].map(d => d.raw)));
+            notifyListeners(colName);
+        }
+
+        function notifyListeners(colName) {
+            mockListeners.forEach(listener => {
+                if (listener.col === colName) listener.callback({ docs: mockDB[colName] });
+            });
+        }
+
+        initMockDatabase();
+
+        // Save Function
+        window.saveRecord = async (colName, data) => {
+            data.timestamp = new Date().toLocaleString();
+            data.id = data.id || generateId();
+            mockDB[colName].push({ data: () => data, raw: data, id: data.id });
+            persistCollection(colName);
+        };
+        
+        // Update Function (Used for changing Transfer Status)
+        window.updateRecord = async (colName, id, updates) => {
+            const index = mockDB[colName].findIndex(doc => doc.id === id);
+            if (index > -1) {
+                mockDB[colName][index].raw = { ...mockDB[colName][index].raw, ...updates };
+                mockDB[colName][index].data = () => mockDB[colName][index].raw;
+                persistCollection(colName);
+            }
+        };
+
+        window.listenToRecords = (colName, callback) => {
+            mockListeners.push({ col: colName, callback });
+            callback({ docs: mockDB[colName] || [] });
+        };
+
+        let currentUserRole = null;
+        let currentModalType = '';
+        let myChart = null;
+        let dynamicBranches = ['Bole', 'Gazebo', 'Embassy', 'Sarbet', 'Airlines'];
+
+        window.login = () => {
+            const roleSelect = document.getElementById('login-role').value;
+            const passwordInput = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            
+            // SECURITY PASSCODES
+            if (roleSelect === 'admin' && passwordInput !== 'Wild@2026#$2018') {
+                errorDiv.innerText = "Incorrect Admin Passcode.";
+                errorDiv.classList.remove('hidden'); return;
+            } else if (roleSelect !== 'admin' && passwordInput !== 'Wildstore@2026#$2018') {
+                errorDiv.innerText = "Incorrect Store Passcode. (Try 1234)";
+                errorDiv.classList.remove('hidden'); return;
+            }
+            
+            errorDiv.classList.add('hidden');
+            currentUserRole = roleSelect;
+            
+            document.getElementById('display-role').innerText = roleSelect === 'admin' ? 'Administrator' : `Store Keeper: ${roleSelect}`;
+            document.getElementById('login-screen').classList.add('hidden');
+            
+            if (currentUserRole === 'admin') document.getElementById('admin-nav').classList.remove('hidden');
+            else document.getElementById('admin-nav').classList.add('hidden');
+
+            setupDashboard();
+        };
+
+        window.showView = (id, btnElement) => {
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active-nav');
+                btn.classList.replace('text-white', 'text-slate-300');
+                if(btn.classList.contains('text-[#D97706]')) btn.classList.remove('text-[#D97706]'); // Admin reset
+            });
+            if (btnElement) {
+                btnElement.classList.add('active-nav');
+                btnElement.classList.replace('text-slate-300', 'text-white');
+            }
+            document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-' + id).classList.add('active');
+            if(id === 'reports') window.renderReports();
+        };
+
+        function showError(msg) {
+            const err = document.getElementById('modal-error');
+            err.innerText = msg;
+            err.classList.remove('hidden');
+        }
+        function hideError() { document.getElementById('modal-error').classList.add('hidden'); }
+
+        window.openModal = (type) => {
+            currentModalType = type;
+            hideError();
+            const content = document.getElementById('modal-content');
+            const title = document.getElementById('modal-title');
+            
+            if (type === 'add-item') {
+                title.innerText = "Add Master Item";
+                content.innerHTML = `
+                    <label class="block text-sm font-bold text-slate-700 mb-1">Item Name</label>
+                    <input id="modal-f1" placeholder="e.g. Roasted Coffee Beans" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none">
+                    <label class="block text-sm font-bold text-slate-700 mb-1 mt-4">Measurement Unit</label>
+                    <input id="modal-f2" placeholder="e.g. Kilograms (Kg)" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none">
+                `;
+            } else if (type === 'add-branch') {
+                title.innerText = "Register New Branch";
+                content.innerHTML = `
+                    <label class="block text-sm font-bold text-slate-700 mb-1">Branch Name</label>
+                    <input id="modal-f1" placeholder="e.g. Piassa Branch" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none">
+                `;
+            } else if (type.startsWith('txn-')) {
+                const action = type.split('-')[1]; // purchase, transfer
+                const subAction = type.split('-')[2]; // out
+                
+                window.currentTxnType = action === 'purchase' ? 'Purchase' : 'Transfer Out';
+                title.innerText = action === 'purchase' ? `Record Local Purchase` : `Initiate Transfer Out`;
+                
+                let itemOptions = '<option value="">Select an Item</option>';
+                mockDB.items.forEach(doc => {
+                    const item = doc.data();
+                    itemOptions += `<option value="${item.name}">${item.name} (${item.detail})</option>`;
+                });
+                
+                if (mockDB.items.length === 0) itemOptions = '<option value="">No Master Items! Admin must add items first.</option>';
+
+                let extraField = '';
+                if (subAction === 'out') {
+                    let branchOptions = `<option value="">Select Destination Location</option>`;
+                    const allLocations = ['Main Warehouse', ...dynamicBranches];
+                    const currentLoc = (currentUserRole === 'admin' ? 'Main Warehouse' : currentUserRole);
+                    
+                    allLocations.forEach(b => {
+                        if (b !== currentLoc) branchOptions += `<option value="${b}">${b}</option>`;
+                    });
+                    
+                    extraField = `
+                        <label class="block text-sm font-bold text-slate-700 mb-1 mt-4">Transfer To</label>
+                        <select id="modal-f3" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none bg-white font-semibold">
+                            ${branchOptions}
+                        </select>
+                    `;
+                }
+
+                content.innerHTML = `
+                    <label class="block text-sm font-bold text-slate-700 mb-1">Item / Ingredient</label>
+                    <select id="modal-f1" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none bg-white font-semibold">
+                        ${itemOptions}
+                    </select>
+                    <label class="block text-sm font-bold text-slate-700 mb-1 mt-4">Quantity</label>
+                    <input id="modal-f2" placeholder="e.g. 50" type="number" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#D97706] outline-none font-bold text-lg">
+                    ${extraField}
+                `;
+            }
+            document.getElementById('action-modal').classList.add('active');
+        };
+
+        window.closeModal = () => document.getElementById('action-modal').classList.remove('active');
+
+        window.handleSave = async () => {
+            const f1 = document.getElementById('modal-f1');
+            const f2 = document.getElementById('modal-f2');
+            const f3 = document.getElementById('modal-f3');
+            
+            const val1 = f1 ? f1.value : '';
+            const val2 = f2 ? f2.value : '';
+            const val3 = f3 ? f3.value : '';
+
+            if(!val1) return showError("Please fill in the primary field.");
+            if(f3 && !val3) return showError("Please select the destination branch.");
+            if(f2 && f2.type === 'number' && parseInt(val2) <= 0) return showError("Quantity must be greater than zero.");
+
+            const assignedBranch = (currentUserRole === 'admin' && currentModalType.startsWith('txn-')) ? 'Main Warehouse' : currentUserRole;
+            const dateStr = new Date().toISOString().split('T')[0];
+
+            if (currentModalType === 'add-item') {
+                await window.saveRecord('items', { name: val1, detail: val2 });
+            } else if (currentModalType === 'add-branch') {
+                await window.saveRecord('branches', { name: val1 });
+            } else if (currentModalType.startsWith('txn-')) {
+                const qty = parseInt(val2);
+                const txnType = window.currentTxnType; // Purchase or Transfer Out
+
+                // Core Ledger Entry (Sender Side)
+                const payload = {
+                    name: val1,
+                    detail: qty,
+                    branch: assignedBranch,
+                    linkedBranch: val3 || null,
+                    txnType: txnType,
+                    rawDate: dateStr
+                };
+                await window.saveRecord('inventory', payload);
+
+                // If Transfer Out, create a Pending Transfer for the Receiver
+                if (txnType === 'Transfer Out') {
+                    await window.saveRecord('transfers', {
+                        itemName: val1,
+                        fromBranch: assignedBranch,
+                        toBranch: val3,
+                        qtySent: qty,
+                        rawDate: dateStr,
+                        status: 'pending' // Enters the pending workflow!
+                    });
+                }
+            }
+            window.closeModal();
+        };
+
+        let currentReceiveTransfer = null;
+
+        window.openReceiveModal = (id) => {
+            const doc = mockDB.transfers.find(t => t.id === id);
+            if(!doc) return;
+            currentReceiveTransfer = doc.raw;
+            
+            document.getElementById('receive-desc').innerHTML = `You are receiving <b>${currentReceiveTransfer.qtySent}</b> units of <b>${currentReceiveTransfer.itemName}</b> from ${currentReceiveTransfer.fromBranch}.`;
+            document.getElementById('receive-qty').value = currentReceiveTransfer.qtySent;
+            document.getElementById('receive-qty').max = currentReceiveTransfer.qtySent;
+            
+            document.getElementById('receive-modal').classList.add('active');
+        };
+
+        window.closeReceiveModal = () => document.getElementById('receive-modal').classList.remove('active');
+
+        window.confirmReceive = async () => {
+            const qtyInput = parseInt(document.getElementById('receive-qty').value);
+            const originalQty = parseInt(currentReceiveTransfer.qtySent);
+            const dateStr = new Date().toISOString().split('T')[0];
+            
+            if (qtyInput < 0 || qtyInput > originalQty) {
+                alert(`Quantity must be between 0 and ${originalQty}`);
+                return;
+            }
+
+            // 1. Add received amount to Receiver's stock
+            if (qtyInput > 0) {
+                await window.saveRecord('inventory', {
+                    name: currentReceiveTransfer.itemName,
+                    detail: qtyInput,
+                    branch: currentReceiveTransfer.toBranch,
+                    linkedBranch: currentReceiveTransfer.fromBranch,
+                    txnType: 'Transfer In',
+                    rawDate: dateStr
+                });
+            }
+
+            // 2. Return missing amount back to Sender's stock
+            const diff = originalQty - qtyInput;
+            if (diff > 0) {
+                await window.saveRecord('inventory', {
+                    name: currentReceiveTransfer.itemName,
+                    detail: diff,
+                    branch: currentReceiveTransfer.fromBranch,
+                    linkedBranch: currentReceiveTransfer.toBranch,
+                    txnType: 'Returned Stock',
+                    rawDate: dateStr
+                });
+            }
+
+            // 3. Mark Transfer as Complete
+            await window.updateRecord('transfers', currentReceiveTransfer.id, { status: 'received' });
+            window.closeReceiveModal();
+        };
+
+        window.rejectTransfer = async (id) => {
+            const doc = mockDB.transfers.find(t => t.id === id);
+            if(!doc) return;
+            const t = doc.raw;
+            const dateStr = new Date().toISOString().split('T')[0];
+
+            // Add everything back to Sender
+            await window.saveRecord('inventory', {
+                name: t.itemName,
+                detail: t.qtySent,
+                branch: t.fromBranch,
+                linkedBranch: t.toBranch,
+                txnType: 'Returned Stock',
+                rawDate: dateStr
+            });
+
+            // Mark Rejected
+            await window.updateRecord('transfers', t.id, { status: 'rejected' });
+        };
+
+
+        window.allTransactions = [];
+
+        window.renderReports = () => {
+            const start = document.getElementById('filter-start').value;
+            const end = document.getElementById('filter-end').value;
+            const type = document.getElementById('filter-type').value;
+            
+            const tableBody = document.getElementById('reports-table');
+            let html = '';
+
+            let filtered = window.allTransactions.filter(data => {
+                if (currentUserRole !== 'admin' && data.branch !== currentUserRole) return false;
+                if (start && data.rawDate < start) return false;
+                if (end && data.rawDate > end) return false;
+                if (type !== 'all' && (data.txnType || 'Purchase').toLowerCase() !== type.toLowerCase()) return false;
+                return true;
+            });
+
+            filtered.forEach(data => {
+                const txnType = data.txnType || 'Purchase';
+                
+                let typeColor = 'text-slate-600 bg-slate-50 border-slate-200';
+                if (txnType === 'Purchase') typeColor = 'text-green-700 bg-green-50 border-green-200';
+                else if (txnType === 'Transfer In') typeColor = 'text-blue-700 bg-blue-50 border-blue-200';
+                else if (txnType === 'Transfer Out') typeColor = 'text-orange-700 bg-orange-50 border-orange-200';
+                else if (txnType === 'Returned Stock') typeColor = 'text-purple-700 bg-purple-50 border-purple-200';
+                
+                let displayType = txnType;
+                if (txnType === 'Transfer In' && data.linkedBranch) displayType = `Transfer In <br><span class="text-[10px] font-normal opacity-75">From: ${data.linkedBranch}</span>`;
+                if (txnType === 'Transfer Out' && data.linkedBranch) displayType = `Transfer Out <br><span class="text-[10px] font-normal opacity-75">To: ${data.linkedBranch}</span>`;
+                if (txnType === 'Returned Stock' && data.linkedBranch) displayType = `Returned Stock <br><span class="text-[10px] font-normal opacity-75">From: ${data.linkedBranch}</span>`;
+                
+                // Add +/- signs for clarity
+                let qtyDisplay = `<span class="font-bold">${data.detail}</span>`;
+                if (txnType === 'Transfer Out') qtyDisplay = `<span class="font-bold text-red-600">- ${data.detail}</span>`;
+                else if (txnType !== 'Purchase') qtyDisplay = `<span class="font-bold text-green-600">+ ${data.detail}</span>`;
+
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="p-5 border-b border-slate-100 text-sm text-slate-500 font-medium">${data.rawDate}</td>
+                        <td class="p-5 border-b border-slate-100"><span class="inline-block px-3 py-1 rounded-lg text-xs font-bold leading-tight border ${typeColor}">${displayType}</span></td>
+                        <td class="p-5 border-b border-slate-100 font-bold text-slate-800">${data.name}</td>
+                        <td class="p-5 border-b border-slate-100 text-lg">${qtyDisplay}</td>
+                        <td class="p-5 border-b border-slate-100 font-medium">${data.branch}</td>
+                    </tr>
+                `;
+            });
+
+            if (html === '') html = '<tr><td colspan="5" class="p-8 text-center text-slate-400 font-medium">No transactions match your current filters.</td></tr>';
+            tableBody.innerHTML = html;
+        };
+
+        window.exportCSV = () => {
+            let csv = "Item Name,Remaining Balance,Location,Last Activity\n";
+            document.querySelectorAll('#inventory-table tr').forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                if(cells.length > 1) {
+                    csv += cells.map(c => `"${c.innerText.replace(/\n/g, ' ')}"`).join(',') + "\n";
+                }
+            });
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `WildCoffee_StockBalances_${new Date().toLocaleDateString()}.csv`; a.click();
+        };
+
+        function setupDashboard() {
+            // Setup Branch Data List
+            window.listenToRecords('branches', (snapshot) => {
+                 const select = document.getElementById('login-role');
+                 let optionsHTML = `
+                    <option value="admin">System Administrator</option>
+                    <option value="Main Warehouse">Store Keeper: Main Warehouse</option>
+                 `;
+                 
+                 dynamicBranches = [];
+                 snapshot.docs.forEach(doc => {
+                     const data = doc.data();
+                     if(data.name !== 'Main Warehouse') {
+                         optionsHTML += `<option value="${data.name}">Store Keeper: ${data.name} Branch</option>`;
+                         dynamicBranches.push(data.name);
+                     }
+                 });
+                 if(document.getElementById('login-screen').classList.contains('hidden') === false) select.innerHTML = optionsHTML;
+                 if(myChart && currentUserRole === 'admin') notifyListeners('inventory');
+            });
+
+            // Setup Chart
+            const ctx = document.getElementById('inventoryChart').getContext('2d');
+            if(myChart) myChart.destroy(); 
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Total Items in Stock',
+                        data: [],
+                        backgroundColor: '#D97706',
+                        borderRadius: 6
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            });
+
+            // Master Calculation Listener for Inventory
+            window.listenToRecords('inventory', (snapshot) => {
+                const tableBody = document.getElementById('inventory-table');
+                
+                let chartStats = { 'Main Warehouse': 0 };
+                dynamicBranches.forEach(b => chartStats[b] = 0);
+                let totalSystemItems = 0;
+                
+                let sortedDocs = [...snapshot.docs].reverse();
+                window.allTransactions = sortedDocs.map(doc => doc.data());
+                
+                if(document.getElementById('view-reports').classList.contains('active')) window.renderReports();
+
+                // Object to hold consolidated balances per item per branch
+                const balances = {};
+
+                sortedDocs.forEach(doc => {
+                    const data = doc.data();
+                    let qty = parseInt(data.detail) || 0;
+                    const b = data.branch;
+                    const txnType = data.txnType || 'Purchase';
+
+                    // Math for Chart Stats (Total aggregate)
+                    if (chartStats[b] !== undefined) {
+                        if (txnType === 'Transfer Out') { chartStats[b] -= qty; totalSystemItems -= qty; }
+                        else { chartStats[b] += qty; totalSystemItems += qty; }
+                    }
+
+                    // Math for Consolidated Table (By specific item)
+                    if (currentUserRole === 'admin' || b === currentUserRole) {
+                        const key = data.name + '_' + b;
+                        if (!balances[key]) balances[key] = { name: data.name, branch: b, qty: 0, lastDate: data.rawDate };
+                        
+                        if (txnType === 'Transfer Out') balances[key].qty -= qty;
+                        else balances[key].qty += qty;
+                        
+                        if (data.rawDate > balances[key].lastDate) balances[key].lastDate = data.rawDate;
+                    }
+                });
+
+                // Render Stock Balances Table
+                let html = '';
+                Object.values(balances).forEach(bal => {
+                    // Safety check: sometimes data manipulation leads to 0 balances, we can hide them or show zero.
+                    if (bal.qty === 0 && currentUserRole !== 'admin') return; 
+
+                    const qtyColor = bal.qty >= 10 ? 'text-green-800 bg-green-100 border-green-300' : (bal.qty > 0 ? 'text-orange-800 bg-orange-100 border-orange-300' : 'text-red-800 bg-red-100 border-red-300');
+                    html += `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="p-5 border-b border-slate-100 font-bold text-slate-800 text-lg">${bal.name}</td>
+                            <td class="p-5 border-b border-slate-100"><span class="px-4 py-2 rounded-xl text-base font-bold border shadow-sm ${qtyColor}">${bal.qty} Units</span></td>
+                            <td class="p-5 border-b border-slate-100 font-semibold text-slate-600">${bal.branch}</td>
+                            <td class="p-5 border-b border-slate-100 text-sm text-slate-500">${bal.lastDate}</td>
+                        </tr>
+                    `;
+                });
+
+                if (html === '') html = '<tr><td colspan="4" class="p-8 text-center text-slate-400 font-medium">No stock available at this location.</td></tr>';
+                tableBody.innerHTML = html;
+                
+                document.getElementById('stat-total-items').innerText = totalSystemItems;
+
+                // Update Chart
+                if (currentUserRole === 'admin') {
+                    const allLabels = [...dynamicBranches, 'Main Warehouse'];
+                    myChart.data.labels = allLabels;
+                    myChart.data.datasets[0].data = allLabels.map(b => chartStats[b] || 0);
+                    // Use a different color for warehouse
+                    myChart.data.datasets[0].backgroundColor = allLabels.map(b => b === 'Main Warehouse' ? '#1E1612' : '#D97706');
+                } else {
+                    myChart.data.labels = [currentUserRole];
+                    myChart.data.datasets[0].data = [chartStats[currentUserRole] || 0];
+                    myChart.data.datasets[0].backgroundColor = ['#D97706'];
+                }
+                myChart.update();
+            });
+
+            // Pending Transfers Listener
+            window.listenToRecords('transfers', (snapshot) => {
+                const pendingPanel = document.getElementById('pending-transfers-panel');
+                const tbody = document.getElementById('pending-transfers-table');
+                let html = '';
+                let hasPending = false;
+                
+                snapshot.docs.forEach(doc => {
+                     const t = doc.data();
+                     // Show to the receiving branch OR Admin can view all pending
+                     if (t.status === 'pending' && (t.toBranch === currentUserRole || currentUserRole === 'admin')) {
+                         hasPending = true;
+                         
+                         let actions = '';
+                         if (currentUserRole === 'admin' && t.toBranch !== 'Main Warehouse') {
+                             actions = `<span class="text-xs text-slate-500 font-bold uppercase tracking-wider bg-slate-100 px-3 py-2 rounded-lg border border-slate-200 shadow-sm">Awaiting receipt by ${t.toBranch}</span>`;
+                         } else {
+                             actions = `
+                               <button onclick="window.openReceiveModal('${t.id}')" class="px-5 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 shadow border border-green-700 mr-2 transition-colors">Receive</button>
+                               <button onclick="window.rejectTransfer('${t.id}')" class="px-5 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 shadow border border-red-700 transition-colors">Reject All</button>
+                             `;
+                         }
+
+                         html += `
+                            <tr class="hover:bg-orange-200/40 transition-colors">
+                                <td class="p-4 font-bold text-slate-800 text-lg w-1/4">${t.itemName}</td>
+                                <td class="p-4 text-sm text-slate-600 w-1/4">From: <span class="font-bold text-slate-800">${t.fromBranch}</span></td>
+                                <td class="p-4 font-bold text-orange-700 text-xl w-1/4">${t.qtySent} <span class="text-xs font-semibold text-orange-900 uppercase">units</span></td>
+                                <td class="p-4 text-right w-1/4">${actions}</td>
+                            </tr>
+                         `;
+                     }
+                });
+                
+                tbody.innerHTML = html;
+                if (hasPending) pendingPanel.classList.remove('hidden');
+                else pendingPanel.classList.add('hidden');
+            });
+        }
+        
+    </script>
+</body>
+</html>
